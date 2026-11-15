@@ -1,0 +1,8 @@
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VOICE AI</string>
+    <string name="app_subtitle">Hands Free Mobile Control</string>
+    <string name="listening">Listening...</string>
+    <string name="ready">Ready to listen</string>
+</resources>
