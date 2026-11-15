@@ -2,7 +2,9 @@
 package com.voiceai.control;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.os.Bundle;
+import android.os.Build;
 import android.Manifest;
 import android.content.Intent;
 import android.content.Context;
@@ -31,24 +33,21 @@ public class MainActivity extends Activity {
 
     private boolean listening = false;
     private boolean learningCommand = false;
+    private boolean pendingHandsFree = false;
     private String pendingPhrase = "";
 
+    private static final int PERMISSION_REQUEST = 101;
+
+    private static final String STOP_ACTION =
+        "com.voiceai.control.STOP_HANDS_FREE";
+
     private static final String[] ACTIONS = {
-        "YOUTUBE",
-        "WHATSAPP",
-        "MX_PLAYER",
-        "VOLUME_UP",
-        "VOLUME_DOWN",
-        "PLAY_PAUSE",
-        "NEXT",
-        "PREVIOUS",
-        "FAST_FORWARD",
-        "REWIND",
-        "SCROLL_UP",
-        "SCROLL_DOWN",
-        "BACK",
-        "HOME",
-        "RECENTS"
+        "YOUTUBE", "WHATSAPP", "MX_PLAYER",
+        "VOLUME_UP", "VOLUME_DOWN",
+        "PLAY_PAUSE", "NEXT", "PREVIOUS",
+        "FAST_FORWARD", "REWIND",
+        "SCROLL_UP", "SCROLL_DOWN",
+        "BACK", "HOME", "RECENTS"
     };
 
     private static final String[] ACTION_NAMES = {
@@ -108,14 +107,38 @@ public class MainActivity extends Activity {
         status.setGravity(Gravity.CENTER);
         add(status, 60);
 
+        TextView modeTitle = new TextView(this);
+        modeTitle.setText("अपना Voice Mode चुनें");
+        modeTitle.setTextColor(Color.CYAN);
+        modeTitle.setTextSize(18);
+        modeTitle.setGravity(Gravity.CENTER);
+        add(modeTitle, 45);
+
         micButton = new Button(this);
-        micButton.setText("🎙 बोलना शुरू करें");
-        micButton.setTextSize(18);
-        add(micButton, 70);
+        micButton.setText("🎙 TAP MODE - बोलें");
+        micButton.setTextSize(17);
+        add(micButton, 65);
+
         micButton.setOnClickListener(v -> {
             learningCommand = false;
+            pendingHandsFree = false;
             checkPermission();
         });
+
+        Button handsFreeButton = new Button(this);
+        handsFreeButton.setText("▶ HANDS-FREE चालू करें");
+        add(handsFreeButton, 65);
+
+        handsFreeButton.setOnClickListener(v -> {
+            pendingHandsFree = true;
+            checkPermission();
+        });
+
+        Button stopButton = new Button(this);
+        stopButton.setText("■ HANDS-FREE बंद करें");
+        add(stopButton, 60);
+
+        stopButton.setOnClickListener(v -> stopHandsFree());
 
         result = new TextView(this);
         result.setText("आपका आदेश यहाँ दिखाई देगा");
@@ -168,26 +191,99 @@ public class MainActivity extends Activity {
     }
 
     private void checkPermission() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
+        ArrayList<String> needed = new ArrayList<>();
+
+        if (Build.VERSION.SDK_INT >= 23 &&
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.RECORD_AUDIO);
+        }
+
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
+
+        if (!needed.isEmpty()) {
             requestPermissions(
-                new String[]{Manifest.permission.RECORD_AUDIO}, 101
+                needed.toArray(new String[0]), PERMISSION_REQUEST
             );
         } else {
-            listen();
+            continueRequestedMode();
         }
     }
 
     @Override
     public void onRequestPermissionsResult(
-            int requestCode, String[] permissions, int[] results) {
+        int requestCode, String[] permissions, int[] results
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
 
-        if (requestCode == 101 && results.length > 0
-                && results[0] == PackageManager.PERMISSION_GRANTED) {
-            listen();
-        } else {
+        if (requestCode != PERMISSION_REQUEST) return;
+
+        boolean microphoneGranted =
+            Build.VERSION.SDK_INT < 23 ||
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+            == PackageManager.PERMISSION_GRANTED;
+
+        if (!microphoneGranted) {
             status.setText("माइक्रोफोन अनुमति नहीं मिली");
+            pendingHandsFree = false;
+            return;
+        }
+
+        continueRequestedMode();
+    }
+
+    private void continueRequestedMode() {
+        if (pendingHandsFree) {
+            pendingHandsFree = false;
+            startHandsFree();
+        } else {
+            listen();
+        }
+    }
+
+    private void startHandsFree() {
+        try {
+            Intent serviceIntent =
+                new Intent(this, HandsFreeListeningService.class);
+
+            if (Build.VERSION.SDK_INT >= 26) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+
+            status.setText("● HANDS-FREE शुरू करने का अनुरोध भेजा");
+            status.setTextColor(Color.GREEN);
+            result.setText(
+                "VOICE AI सुनने की सेवा शुरू की जा रही है"
+            );
+
+        } catch (Exception e) {
+            status.setText("Hands-Free शुरू नहीं हो पाया");
+            result.setText(e.getMessage());
+        }
+    }
+
+    private void stopHandsFree() {
+        try {
+            Intent stopIntent =
+                new Intent(this, HandsFreeListeningService.class);
+
+            stopIntent.setAction(STOP_ACTION);
+            startService(stopIntent);
+
+            status.setText("● Hands-Free बंद करने का अनुरोध भेजा");
+            status.setTextColor(Color.YELLOW);
+
+        } catch (Exception e) {
+            stopService(
+                new Intent(this, HandsFreeListeningService.class)
+            );
+            status.setText("Hands-Free बंद किया");
         }
     }
 
@@ -212,15 +308,15 @@ public class MainActivity extends Activity {
                 listening = false;
                 status.setText("● फिर से बोलने के लिए बटन दबाएँ");
                 status.setTextColor(Color.GREEN);
-                micButton.setText("🎙 बोलना शुरू करें");
+                micButton.setText("🎙 TAP MODE - बोलें");
             }
 
             @Override
-            public void onResults(Bundle results) {
+            public void onResults(Bundle data) {
                 listening = false;
 
                 ArrayList<String> matches =
-                    results.getStringArrayList(
+                    data.getStringArrayList(
                         SpeechRecognizer.RESULTS_RECOGNITION
                     );
 
@@ -241,32 +337,42 @@ public class MainActivity extends Activity {
 
                 status.setText("● तैयार हूँ");
                 status.setTextColor(Color.GREEN);
-                micButton.setText("🎙 बोलना शुरू करें");
+                micButton.setText("🎙 TAP MODE - बोलें");
             }
 
-            @Override public void onPartialResults(Bundle partialResults) {}
-            @Override public void onEvent(int eventType, Bundle params) {}
+            @Override public void onPartialResults(Bundle data) {}
+            @Override public void onEvent(int type, Bundle data) {}
         });
     }
 
     private void listen() {
         if (recognizer == null || listening) return;
 
-        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        Intent intent = new Intent(
+            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+        );
+
         intent.putExtra(
             RecognizerIntent.EXTRA_LANGUAGE_MODEL,
             RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
         );
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN");
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN");
+        intent.putExtra(
+            RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN"
+        );
         intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
 
-        recognizer.startListening(intent);
+        try {
+            recognizer.startListening(intent);
+        } catch (Exception e) {
+            status.setText("आवाज़ पहचान शुरू नहीं हो पाई");
+        }
     }
 
     private void startLearning() {
         learningCommand = true;
         pendingPhrase = "";
+        pendingHandsFree = false;
         result.setText("अब अपना नया आदेश बोलिए");
         checkPermission();
     }
@@ -274,16 +380,12 @@ public class MainActivity extends Activity {
     private void showActionChoice(String phrase) {
         String suggestion = suggestAction(phrase);
 
-        String[] options = new String[ACTION_NAMES.length];
-        for (int i = 0; i < ACTION_NAMES.length; i++) {
-            options[i] = ACTION_NAMES[i];
-        }
-
         new AlertDialog.Builder(this)
             .setTitle("कमांड का एक्शन चुनें")
             .setMessage("आपका वाक्य: " + phrase +
                 "\nऐप का सुझाव: " + getActionName(suggestion))
-            .setSingleChoiceItems(options, findActionIndex(suggestion),
+            .setSingleChoiceItems(ACTION_NAMES,
+                findActionIndex(suggestion),
                 (dialog, which) -> {
                     String selected = ACTIONS[which];
 
@@ -293,12 +395,12 @@ public class MainActivity extends Activity {
                             "\nएक्शन: " + ACTION_NAMES[which])
                         .setNegativeButton("नहीं", (d, w) -> d.dismiss())
                         .setPositiveButton("हाँ, सेव करें", (d, w) -> {
-                            boolean saved = commandStore.saveCommand(
-                                phrase, selected
-                            );
-                            result.setText(saved ?
-                                "कमांड सेव हो गया: " + phrase :
-                                "कमांड सेव नहीं हुआ");
+                            boolean saved =
+                                commandStore.saveCommand(phrase, selected);
+
+                            result.setText(saved
+                                ? "कमांड सेव हो गया: " + phrase
+                                : "कमांड सेव नहीं हुआ");
                         })
                         .show();
 
@@ -310,8 +412,7 @@ public class MainActivity extends Activity {
 
     private String suggestAction(String phrase) {
         if (phrase.contains("यूट्यूब")) return "YOUTUBE";
-        if (phrase.contains("व्हाट्स") || phrase.contains("व्हाट्सएप"))
-            return "WHATSAPP";
+        if (phrase.contains("व्हाट्स")) return "WHATSAPP";
         if (phrase.contains("एमएक्स") || phrase.contains("एम एक्स"))
             return "MX_PLAYER";
         if (phrase.contains("बढ़ाओ")) return "VOLUME_UP";
@@ -325,8 +426,6 @@ public class MainActivity extends Activity {
         if (phrase.contains("वापस")) return "BACK";
         if (phrase.contains("होम")) return "HOME";
         if (phrase.contains("हाल के")) return "RECENTS";
-        if (phrase.contains("रोक") || phrase.contains("चलाओ"))
-            return "PLAY_PAUSE";
         return "PLAY_PAUSE";
     }
 
@@ -387,51 +486,36 @@ public class MainActivity extends Activity {
         }
 
         if (c.contains("आवाज़ बढ़ाओ") || c.contains("वॉल्यूम बढ़ाओ")) {
-            changeVolume(true);
-        }
-        else if (c.contains("आवाज़ कम") || c.contains("वॉल्यूम कम")) {
-            changeVolume(false);
-        }
-        else if (c.contains("यूट्यूब")) {
+            executeAction("VOLUME_UP");
+        } else if (c.contains("आवाज़ कम") || c.contains("वॉल्यूम कम")) {
+            executeAction("VOLUME_DOWN");
+        } else if (c.contains("यूट्यूब")) {
             executeAction("YOUTUBE");
-        }
-        else if (c.contains("व्हाट्सऐप") || c.contains("व्हाट्सएप")) {
+        } else if (c.contains("व्हाट्सऐप") || c.contains("व्हाट्सएप")) {
             executeAction("WHATSAPP");
-        }
-        else if (c.contains("एमएक्स प्लेयर") || c.contains("एम एक्स प्लेयर")) {
+        } else if (c.contains("एमएक्स प्लेयर") || c.contains("एम एक्स प्लेयर")) {
             executeAction("MX_PLAYER");
-        }
-        else if (c.contains("अगला गाना") || c.equals("अगला")) {
+        } else if (c.contains("अगला गाना") || c.equals("अगला")) {
             executeAction("NEXT");
-        }
-        else if (c.contains("पिछला गाना") || c.equals("पिछला")) {
+        } else if (c.contains("पिछला गाना") || c.equals("पिछला")) {
             executeAction("PREVIOUS");
-        }
-        else if (c.contains("फास्ट फॉरवर्ड") || c.contains("आगे चलाओ")) {
+        } else if (c.contains("फास्ट फॉरवर्ड") || c.contains("आगे चलाओ")) {
             executeAction("FAST_FORWARD");
-        }
-        else if (c.contains("रिवाइंड") || c.contains("पीछे चलाओ")) {
+        } else if (c.contains("रिवाइंड") || c.contains("पीछे चलाओ")) {
             executeAction("REWIND");
-        }
-        else if (c.contains("चलाओ") || c.contains("रोक दो") || c.contains("पॉज")) {
+        } else if (c.contains("चलाओ") || c.contains("रोक दो") || c.contains("पॉज")) {
             executeAction("PLAY_PAUSE");
-        }
-        else if (c.contains("नीचे स्क्रॉल")) {
+        } else if (c.contains("नीचे स्क्रॉल")) {
             executeAction("SCROLL_DOWN");
-        }
-        else if (c.contains("ऊपर स्क्रॉल")) {
+        } else if (c.contains("ऊपर स्क्रॉल")) {
             executeAction("SCROLL_UP");
-        }
-        else if (c.contains("वापस जाओ")) {
+        } else if (c.contains("वापस जाओ")) {
             executeAction("BACK");
-        }
-        else if (c.contains("होम पर जाओ")) {
+        } else if (c.contains("होम पर जाओ")) {
             executeAction("HOME");
-        }
-        else if (c.contains("हाल के ऐप")) {
+        } else if (c.contains("हाल के ऐप")) {
             executeAction("RECENTS");
-        }
-        else {
+        } else {
             result.setText("यह आदेश अभी समझ नहीं आया");
         }
     }
@@ -491,7 +575,8 @@ public class MainActivity extends Activity {
     }
 
     private void openApp(String packageName) {
-        Intent intent = getPackageManager().getLaunchIntentForPackage(packageName);
+        Intent intent =
+            getPackageManager().getLaunchIntentForPackage(packageName);
 
         if (intent != null) {
             startActivity(intent);
@@ -508,24 +593,5 @@ public class MainActivity extends Activity {
         };
 
         for (String p : packages) {
-            Intent intent = getPackageManager().getLaunchIntentForPackage(p);
-
-            if (intent != null) {
-                startActivity(intent);
-                result.setText("MX Player खोल रहा हूँ...");
-                return;
-            }
-        }
-
-        result.setText("MX Player फोन में नहीं मिला");
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (recognizer != null) {
-            recognizer.destroy();
-            recognizer = null;
-        }
-        super.onDestroy();
-    }
-                                         }
+            Intent intent =
+           
