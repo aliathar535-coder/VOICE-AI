@@ -45,27 +45,34 @@ public class MainActivity extends Activity {
         title.setTypeface(null, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
 
+        TextView subtitle = new TextView(this);
+        subtitle.setText("आवाज़ से मोबाइल चलाएँ");
+        subtitle.setTextColor(Color.WHITE);
+        subtitle.setTextSize(17);
+        subtitle.setGravity(Gravity.CENTER);
+
         status = new TextView(this);
-        status.setText("● READY TO LISTEN");
+        status.setText("● सुनने के लिए तैयार");
         status.setTextColor(Color.GREEN);
         status.setTextSize(18);
         status.setGravity(Gravity.CENTER);
-        status.setPadding(10, 30, 10, 30);
+        status.setPadding(10, 25, 10, 25);
 
         micButton = new Button(this);
-        micButton.setText("🎙 START VOICE CONTROL");
+        micButton.setText("🎙 आवाज़ से चलाना शुरू करें");
 
         accessButton = new Button(this);
-        accessButton.setText("ENABLE MOBILE CONTROL");
+        accessButton.setText("मोबाइल कंट्रोल की अनुमति दें");
 
         result = new TextView(this);
-        result.setText("Say a command...");
+        result.setText("अपना आदेश बोलें...");
         result.setTextColor(Color.WHITE);
         result.setTextSize(17);
         result.setGravity(Gravity.CENTER);
-        result.setPadding(10, 30, 10, 30);
+        result.setPadding(10, 25, 10, 25);
 
         layout.addView(title);
+        layout.addView(subtitle);
         layout.addView(status);
         layout.addView(micButton);
         layout.addView(accessButton);
@@ -83,7 +90,7 @@ public class MainActivity extends Activity {
             recognizer = SpeechRecognizer.createSpeechRecognizer(this);
             setupRecognizer();
         } else {
-            status.setText("Speech recognition unavailable");
+            status.setText("आवाज़ पहचानने की सुविधा उपलब्ध नहीं है");
         }
     }
 
@@ -107,28 +114,31 @@ public class MainActivity extends Activity {
                 && results[0] == PackageManager.PERMISSION_GRANTED) {
             listen();
         } else {
-            status.setText("Microphone permission required");
+            status.setText("माइक्रोफोन की अनुमति जरूरी है");
         }
     }
 
     private void setupRecognizer() {
         recognizer.setRecognitionListener(new RecognitionListener() {
 
+            @Override
             public void onReadyForSpeech(Bundle b) {
-                status.setText("● LISTENING...");
+                status.setText("● सुन रहा हूँ...");
                 status.setTextColor(Color.YELLOW);
             }
 
-            public void onBeginningOfSpeech() {}
-            public void onRmsChanged(float r) {}
-            public void onBufferReceived(byte[] b) {}
-            public void onEndOfSpeech() {}
+            @Override public void onBeginningOfSpeech() {}
+            @Override public void onRmsChanged(float r) {}
+            @Override public void onBufferReceived(byte[] b) {}
+            @Override public void onEndOfSpeech() {}
 
+            @Override
             public void onError(int error) {
-                status.setText("● READY");
+                status.setText("● फिर से शुरू करें");
                 status.setTextColor(Color.GREEN);
             }
 
+            @Override
             public void onResults(Bundle b) {
                 ArrayList<String> list =
                     b.getStringArrayList(
@@ -137,16 +147,16 @@ public class MainActivity extends Activity {
 
                 if (list != null && !list.isEmpty()) {
                     String command = list.get(0).toLowerCase(Locale.ROOT);
-                    result.setText("You said: " + command);
+                    result.setText("आपने कहा: " + command);
                     runCommand(command);
                 }
 
-                status.setText("● READY");
+                status.setText("● सुनने के लिए तैयार");
                 status.setTextColor(Color.GREEN);
             }
 
-            public void onPartialResults(Bundle b) {}
-            public void onEvent(int e, Bundle b) {}
+            @Override public void onPartialResults(Bundle b) {}
+            @Override public void onEvent(int e, Bundle b) {}
         });
     }
 
@@ -167,85 +177,81 @@ public class MainActivity extends Activity {
 
     private void runCommand(String c) {
 
-        if (c.contains("volume") &&
-            (c.contains("badhao") || c.contains("badhाओ")
-             || c.contains("up"))) {
-
-            audio.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                AudioManager.ADJUST_RAISE,
-                AudioManager.FLAG_SHOW_UI
-            );
-            result.setText("Volume increased");
+        if (c.contains("आवाज़ बढ़ाओ") || c.contains("वॉल्यूम बढ़ाओ")) {
+            changeVolume(true);
         }
 
-        else if (c.contains("volume") &&
-            (c.contains("kam") || c.contains("down"))) {
-
-            audio.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                AudioManager.ADJUST_LOWER,
-                AudioManager.FLAG_SHOW_UI
-            );
-            result.setText("Volume decreased");
+        else if (c.contains("आवाज़ कम करो") || c.contains("वॉल्यूम कम करो")) {
+            changeVolume(false);
         }
 
-        else if (c.contains("youtube")) {
+        else if (c.contains("यूट्यूब")) {
             openApp("com.google.android.youtube");
         }
 
-        else if (c.contains("whatsapp")) {
+        else if (c.contains("व्हाट्सऐप") || c.contains("व्हाट्सएप")) {
             openApp("com.whatsapp");
         }
 
-        else if (c.contains("mx player") || c.contains("mxplayer")) {
-            openApp("com.mxtech.videoplayer.ad");
+        else if (c.contains("एमएक्स प्लेयर") || c.contains("एम एक्स प्लेयर")) {
+            openMXPlayer();
         }
 
-        else if (c.contains("play") || c.contains("pause")
-                 || c.contains("रोक") || c.contains("चलाओ")) {
-            sendCommand("PLAY_PAUSE");
-        }
-
-        else if (c.contains("next") || c.contains("अगला")) {
-            sendCommand("NEXT");
-        }
-
-        else if (c.contains("previous") || c.contains("पिछला")) {
-            sendCommand("PREVIOUS");
-        }
-
-        else if (c.contains("आगे") || c.contains("fast forward")) {
+        else if (c.contains("आगे चलाओ") || c.contains("फास्ट फॉरवर्ड")) {
             sendCommand("FAST_FORWARD");
         }
 
-        else if (c.contains("पीछे") || c.contains("rewind")) {
+        else if (c.contains("पीछे चलाओ") || c.contains("रिवाइंड")) {
             sendCommand("REWIND");
         }
 
-        else if (c.contains("back")) {
-            sendCommand("BACK");
+        else if (c.contains("अगला गाना") || c.contains("अगला")) {
+            sendCommand("NEXT");
         }
 
-        else if (c.contains("home")) {
-            sendCommand("HOME");
+        else if (c.contains("पिछला गाना") || c.contains("पिछला")) {
+            sendCommand("PREVIOUS");
         }
 
-        else if (c.contains("recent")) {
-            sendCommand("RECENTS");
+        else if (c.contains("चलाओ") || c.contains("रोक दो") || c.contains("पॉज")) {
+            sendCommand("PLAY_PAUSE");
         }
 
-        else if (c.contains("scroll down")) {
+        else if (c.contains("नीचे स्क्रॉल")) {
             sendCommand("SCROLL_DOWN");
         }
 
-        else if (c.contains("scroll up")) {
+        else if (c.contains("ऊपर स्क्रॉल")) {
             sendCommand("SCROLL_UP");
         }
 
-        else {
-            result.setText("Command not recognized");
+        else if (c.contains("वापस जाओ")) {
+            sendCommand("BACK");
         }
+
+        else if (c.contains("होम पर जाओ")) {
+            sendCommand("HOME");
+        }
+
+        else if (c.contains("हाल के ऐप")) {
+            sendCommand("RECENTS");
+        }
+
+        else {
+            result.setText("यह आदेश समझ नहीं आया");
+        }
+    }
+
+    private void changeVolume(boolean increase) {
+        if (audio == null) return;
+
+        audio.adjustStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            increase ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER,
+            AudioManager.FLAG_SHOW_UI
+        );
+
+        result.setText(increase ? "आवाज़ बढ़ा दी" : "आवाज़ कम कर दी");
     }
 
     private void sendCommand(String command) {
@@ -253,7 +259,7 @@ public class MainActivity extends Activity {
         i.setPackage(getPackageName());
         i.putExtra("command", command);
         sendBroadcast(i);
-        result.setText("Command sent: " + command);
+        result.setText("आदेश भेज दिया: " + command);
     }
 
     private void openApp(String packageName) {
@@ -261,15 +267,37 @@ public class MainActivity extends Activity {
 
         if (i != null) {
             startActivity(i);
-            result.setText("Opening app...");
+            result.setText("ऐप खोल रहा हूँ...");
         } else {
-            result.setText("App not installed");
+            result.setText("यह ऐप फोन में नहीं मिला");
         }
+    }
+
+    private void openMXPlayer() {
+        String[] packages = {
+            "com.mxtech.videoplayer.ad",
+            "com.mxtech.videoplayer.pro"
+        };
+
+        for (String p : packages) {
+            Intent i = getPackageManager().getLaunchIntentForPackage(p);
+
+            if (i != null) {
+                startActivity(i);
+                result.setText("एमएक्स प्लेयर खोल रहा हूँ...");
+                return;
+            }
+        }
+
+        result.setText("एमएक्स प्लेयर फोन में नहीं मिला");
     }
 
     @Override
     protected void onDestroy() {
-        if (recognizer != null) recognizer.destroy();
+        if (recognizer != null) {
+            recognizer.destroy();
+            recognizer = null;
+        }
         super.onDestroy();
     }
 }
