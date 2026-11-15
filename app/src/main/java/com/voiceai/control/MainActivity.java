@@ -5,14 +5,14 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.Manifest;
+import android.provider.Settings;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.RecognitionListener;
-import android.speech.RecognizerIntent;
 import android.media.AudioManager;
 import android.content.Context;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.*;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -21,127 +21,122 @@ import java.util.Locale;
 
 public class MainActivity extends Activity {
 
-    TextView status;
-    TextView result;
-    Button micButton;
-    SpeechRecognizer speechRecognizer;
-    AudioManager audioManager;
+    TextView status, result;
+    Button micButton, accessButton;
+    SpeechRecognizer recognizer;
+    AudioManager audio;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        audioManager = (AudioManager)
-                getSystemService(Context.AUDIO_SERVICE);
+        audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
-        LinearLayout main = new LinearLayout(this);
-        main.setOrientation(LinearLayout.VERTICAL);
-        main.setGravity(Gravity.CENTER);
-        main.setPadding(28, 35, 28, 35);
-        main.setBackgroundColor(Color.rgb(7, 13, 30));
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(1);
+        layout.setGravity(Gravity.CENTER);
+        layout.setPadding(25, 35, 25, 35);
+        layout.setBackgroundColor(Color.rgb(7, 13, 30));
 
         TextView title = new TextView(this);
         title.setText("VOICE AI");
-        title.setTextSize(34);
+        title.setTextSize(36);
         title.setTextColor(Color.CYAN);
         title.setTypeface(null, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
 
-        TextView subtitle = new TextView(this);
-        subtitle.setText("HANDS FREE MOBILE CONTROL");
-        subtitle.setTextColor(Color.WHITE);
-        subtitle.setTextSize(13);
-        subtitle.setGravity(Gravity.CENTER);
-
         status = new TextView(this);
         status.setText("● READY TO LISTEN");
         status.setTextColor(Color.GREEN);
-        status.setTextSize(17);
+        status.setTextSize(18);
         status.setGravity(Gravity.CENTER);
-        status.setPadding(10, 35, 10, 25);
+        status.setPadding(10, 30, 10, 30);
 
         micButton = new Button(this);
-        micButton.setText("🎙 START VOICE");
-        micButton.setTextSize(20);
+        micButton.setText("🎙 START VOICE CONTROL");
+
+        accessButton = new Button(this);
+        accessButton.setText("ENABLE MOBILE CONTROL");
 
         result = new TextView(this);
-        result.setText("Your voice command will appear here");
+        result.setText("Say a command...");
         result.setTextColor(Color.WHITE);
         result.setTextSize(17);
         result.setGravity(Gravity.CENTER);
-        result.setPadding(15, 35, 15, 35);
+        result.setPadding(10, 30, 10, 30);
 
-        TextView help = new TextView(this);
-        help.setText(
-            "Try saying:\n\n" +
-            "Volume badhao\n" +
-            "Volume kam karo\n" +
-            "YouTube kholo\n" +
-            "WhatsApp kholo\n" +
-            "Flashlight on\n" +
-            "Flashlight off"
+        layout.addView(title);
+        layout.addView(status);
+        layout.addView(micButton);
+        layout.addView(accessButton);
+        layout.addView(result);
+
+        setContentView(layout);
+
+        accessButton.setOnClickListener(v ->
+            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         );
-        help.setTextColor(Color.LTGRAY);
-        help.setTextSize(16);
-        help.setGravity(Gravity.CENTER);
 
-        main.addView(title);
-        main.addView(subtitle);
-        main.addView(status);
-        main.addView(micButton);
-        main.addView(result);
-        main.addView(help);
-
-        setContentView(main);
+        micButton.setOnClickListener(v -> checkPermission());
 
         if (SpeechRecognizer.isRecognitionAvailable(this)) {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
-            setupSpeech();
+            recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            setupRecognizer();
         } else {
-            status.setText("Speech recognition not available");
+            status.setText("Speech recognition unavailable");
         }
-
-        micButton.setOnClickListener(v -> startListening());
     }
 
-    private void setupSpeech() {
-        speechRecognizer.setRecognitionListener(new RecognitionListener() {
+    private void checkPermission() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                new String[]{Manifest.permission.RECORD_AUDIO}, 101
+            );
+        } else {
+            listen();
+        }
+    }
 
-            @Override
-            public void onReadyForSpeech(Bundle params) {
+    @Override
+    public void onRequestPermissionsResult(
+            int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+
+        if (requestCode == 101 && results.length > 0
+                && results[0] == PackageManager.PERMISSION_GRANTED) {
+            listen();
+        } else {
+            status.setText("Microphone permission required");
+        }
+    }
+
+    private void setupRecognizer() {
+        recognizer.setRecognitionListener(new RecognitionListener() {
+
+            public void onReadyForSpeech(Bundle b) {
                 status.setText("● LISTENING...");
                 status.setTextColor(Color.YELLOW);
             }
 
-            @Override
             public void onBeginningOfSpeech() {}
+            public void onRmsChanged(float r) {}
+            public void onBufferReceived(byte[] b) {}
+            public void onEndOfSpeech() {}
 
-            @Override
-            public void onRmsChanged(float rmsdB) {}
-
-            @Override
-            public void onBufferReceived(byte[] buffer) {}
-
-            @Override
-            public void onEndOfSpeech() {
-                status.setText("● PROCESSING...");
-            }
-
-            @Override
             public void onError(int error) {
                 status.setText("● READY");
                 status.setTextColor(Color.GREEN);
             }
 
-            @Override
-            public void onResults(Bundle results) {
-                ArrayList<String> words =
-                    results.getStringArrayList(
+            public void onResults(Bundle b) {
+                ArrayList<String> list =
+                    b.getStringArrayList(
                         SpeechRecognizer.RESULTS_RECOGNITION
                     );
 
-                if (words != null && !words.isEmpty()) {
-                    String command = words.get(0).toLowerCase(Locale.ROOT);
+                if (list != null && !list.isEmpty()) {
+                    String command = list.get(0).toLowerCase(Locale.ROOT);
                     result.setText("You said: " + command);
                     runCommand(command);
                 }
@@ -150,38 +145,33 @@ public class MainActivity extends Activity {
                 status.setTextColor(Color.GREEN);
             }
 
-            @Override
-            public void onPartialResults(Bundle partialResults) {}
-
-            @Override
-            public void onEvent(int eventType, Bundle params) {}
+            public void onPartialResults(Bundle b) {}
+            public void onEvent(int e, Bundle b) {}
         });
     }
 
-    private void startListening() {
-        if (speechRecognizer == null) return;
+    private void listen() {
+        if (recognizer == null) return;
 
-        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        intent.putExtra(
+        Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        i.putExtra(
             RecognizerIntent.EXTRA_LANGUAGE_MODEL,
             RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
         );
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE,
-                        "hi-IN");
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
-                        "hi-IN");
-        intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN");
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN");
+        i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
 
-        speechRecognizer.startListening(intent);
+        recognizer.startListening(i);
     }
 
-    private void runCommand(String command) {
+    private void runCommand(String c) {
 
-        if (command.contains("volume") &&
-            (command.contains("badhao") ||
-             command.contains("up"))) {
+        if (c.contains("volume") &&
+            (c.contains("badhao") || c.contains("badhाओ")
+             || c.contains("up"))) {
 
-            audioManager.adjustStreamVolume(
+            audio.adjustStreamVolume(
                 AudioManager.STREAM_MUSIC,
                 AudioManager.ADJUST_RAISE,
                 AudioManager.FLAG_SHOW_UI
@@ -189,11 +179,10 @@ public class MainActivity extends Activity {
             result.setText("Volume increased");
         }
 
-        else if (command.contains("volume") &&
-                (command.contains("kam") ||
-                 command.contains("down"))) {
+        else if (c.contains("volume") &&
+            (c.contains("kam") || c.contains("down"))) {
 
-            audioManager.adjustStreamVolume(
+            audio.adjustStreamVolume(
                 AudioManager.STREAM_MUSIC,
                 AudioManager.ADJUST_LOWER,
                 AudioManager.FLAG_SHOW_UI
@@ -201,30 +190,77 @@ public class MainActivity extends Activity {
             result.setText("Volume decreased");
         }
 
-        else if (command.contains("youtube")) {
+        else if (c.contains("youtube")) {
             openApp("com.google.android.youtube");
         }
 
-        else if (command.contains("whatsapp")) {
+        else if (c.contains("whatsapp")) {
             openApp("com.whatsapp");
         }
 
-        else if (command.contains("mx player") ||
-                 command.contains("mxplayer")) {
+        else if (c.contains("mx player") || c.contains("mxplayer")) {
             openApp("com.mxtech.videoplayer.ad");
         }
 
+        else if (c.contains("play") || c.contains("pause")
+                 || c.contains("रोक") || c.contains("चलाओ")) {
+            sendCommand("PLAY_PAUSE");
+        }
+
+        else if (c.contains("next") || c.contains("अगला")) {
+            sendCommand("NEXT");
+        }
+
+        else if (c.contains("previous") || c.contains("पिछला")) {
+            sendCommand("PREVIOUS");
+        }
+
+        else if (c.contains("आगे") || c.contains("fast forward")) {
+            sendCommand("FAST_FORWARD");
+        }
+
+        else if (c.contains("पीछे") || c.contains("rewind")) {
+            sendCommand("REWIND");
+        }
+
+        else if (c.contains("back")) {
+            sendCommand("BACK");
+        }
+
+        else if (c.contains("home")) {
+            sendCommand("HOME");
+        }
+
+        else if (c.contains("recent")) {
+            sendCommand("RECENTS");
+        }
+
+        else if (c.contains("scroll down")) {
+            sendCommand("SCROLL_DOWN");
+        }
+
+        else if (c.contains("scroll up")) {
+            sendCommand("SCROLL_UP");
+        }
+
         else {
-            result.setText("Command not supported yet");
+            result.setText("Command not recognized");
         }
     }
 
-    private void openApp(String packageName) {
-        Intent launch = getPackageManager()
-            .getLaunchIntentForPackage(packageName);
+    private void sendCommand(String command) {
+        Intent i = new Intent("com.voiceai.control.COMMAND");
+        i.setPackage(getPackageName());
+        i.putExtra("command", command);
+        sendBroadcast(i);
+        result.setText("Command sent: " + command);
+    }
 
-        if (launch != null) {
-            startActivity(launch);
+    private void openApp(String packageName) {
+        Intent i = getPackageManager().getLaunchIntentForPackage(packageName);
+
+        if (i != null) {
+            startActivity(i);
             result.setText("Opening app...");
         } else {
             result.setText("App not installed");
@@ -233,9 +269,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        if (speechRecognizer != null) {
-            speechRecognizer.destroy();
-        }
+        if (recognizer != null) recognizer.destroy();
         super.onDestroy();
     }
-    }
+}
