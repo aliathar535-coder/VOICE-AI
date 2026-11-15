@@ -510,6 +510,17 @@ public class HandsFreeListeningService extends Service
         stopSelf();
     }
 
+    
+@Override
+public void onPartialResults(Bundle partialResults) {
+    // Partial speech results अभी उपयोग नहीं किए जाते।
+}
+
+@Override
+public void onEvent(int eventType, Bundle params) {
+    // अतिरिक्त speech events अभी उपयोग नहीं किए जाते।
+}
+                
     @Override
     public void onDestroy() {
 
