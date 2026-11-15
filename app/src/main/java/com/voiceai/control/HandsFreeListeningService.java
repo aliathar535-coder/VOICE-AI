@@ -1,3 +1,4 @@
+
 package com.voiceai.control;
 
 import android.app.Service;
@@ -35,6 +36,7 @@ public class HandsFreeListeningService extends Service
 
     private boolean running = false;
     private boolean waitingForCommand = false;
+    private boolean listeningNow = false;
 
     private final Runnable restartTask = () -> {
         if (running) {
@@ -57,6 +59,7 @@ public class HandsFreeListeningService extends Service
 
         if (intent != null &&
                 ACTION_STOP.equals(intent.getAction())) {
+
             stopListeningService();
             return START_NOT_STICKY;
         }
@@ -75,11 +78,14 @@ public class HandsFreeListeningService extends Service
 
             running = true;
             waitingForCommand = false;
+            listeningNow = false;
 
-            recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            recognizer =
+                    SpeechRecognizer.createSpeechRecognizer(this);
+
             recognizer.setRecognitionListener(this);
 
-            handler.postDelayed(restartTask, 500);
+            scheduleRestart(700);
 
         } catch (Exception e) {
             stopListeningService();
@@ -90,13 +96,15 @@ public class HandsFreeListeningService extends Service
     }
 
     private void createNotificationChannel() {
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "VOICE AI Hands-Free",
-                    NotificationManager.IMPORTANCE_LOW
-            );
+            NotificationChannel channel =
+                    new NotificationChannel(
+                            CHANNEL_ID,
+                            "VOICE AI Hands-Free",
+                            NotificationManager.IMPORTANCE_LOW
+                    );
 
             channel.setDescription(
                     "VOICE AI आवाज़ सुनने की सेवा"
@@ -119,9 +127,7 @@ public class HandsFreeListeningService extends Service
 
             notification = new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("VOICE AI चालू है")
-                    .setContentText(
-                            "जगाने के लिए बोलें: VOICE AI"
-                    )
+                    .setContentText("जगाने के लिए बोलें: VOICE AI")
                     .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                     .setOngoing(true)
                     .build();
@@ -137,19 +143,22 @@ public class HandsFreeListeningService extends Service
         }
 
         if (Build.VERSION.SDK_INT >= 29) {
+
             startForeground(
                     NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             );
+
         } else {
+
             startForeground(NOTIFICATION_ID, notification);
         }
     }
 
     private void startListening() {
 
-        if (!running || recognizer == null) {
+        if (!running || recognizer == null || listeningNow) {
             return;
         }
 
@@ -183,15 +192,19 @@ public class HandsFreeListeningService extends Service
                     false
             );
 
+            listeningNow = true;
             recognizer.startListening(intent);
 
         } catch (Exception e) {
+
+            listeningNow = false;
             scheduleRestart(2000);
         }
     }
 
     @Override
     public void onReadyForSpeech(Bundle params) {
+        listeningNow = true;
     }
 
     @Override
@@ -208,10 +221,13 @@ public class HandsFreeListeningService extends Service
 
     @Override
     public void onEndOfSpeech() {
+        listeningNow = false;
     }
 
     @Override
     public void onError(int error) {
+
+        listeningNow = false;
 
         if (!running) return;
 
@@ -220,6 +236,8 @@ public class HandsFreeListeningService extends Service
 
     @Override
     public void onResults(Bundle results) {
+
+        listeningNow = false;
 
         if (!running) return;
 
@@ -232,7 +250,9 @@ public class HandsFreeListeningService extends Service
 
             String spoken = matches.get(0).trim();
 
-            processSpokenText(spoken);
+            if (!spoken.isEmpty()) {
+                processSpokenText(spoken);
+            }
         }
 
         scheduleRestart(900);
@@ -251,21 +271,21 @@ public class HandsFreeListeningService extends Service
 
         if (!waitingForCommand) {
 
-            if (wakeWord) {
+            if (!wakeWord) return;
 
-                waitingForCommand = true;
+            waitingForCommand = true;
 
-                String remaining = spoken
-                        .replaceAll("(?i)voice\\s*ai", "")
-                        .replace("वॉइस एआई", "")
-                        .replace("वॉइसएआई", "")
-                        .replace("वॉइसआई", "")
-                        .trim();
+            String remaining = spoken
+                    .replaceAll("(?i)voice\\s*ai", "")
+                    .replace("वॉइस एआई", "")
+                    .replace("वॉइसएआई", "")
+                    .replace("वॉइसआई", "")
+                    .trim();
 
-                if (!remaining.isEmpty()) {
-                    executeSpokenCommand(remaining);
-                    waitingForCommand = false;
-                }
+            if (!remaining.isEmpty()) {
+
+                executeSpokenCommand(remaining);
+                waitingForCommand = false;
             }
 
             return;
@@ -284,7 +304,8 @@ public class HandsFreeListeningService extends Service
 
         if (command.isEmpty()) return;
 
-        String customAction = commandStore.findAction(command);
+        String customAction =
+                commandStore.findAction(command);
 
         if (customAction != null) {
             executeAction(customAction);
@@ -350,6 +371,8 @@ public class HandsFreeListeningService extends Service
 
     private void executeAction(String action) {
 
+        if (action == null) return;
+
         switch (action) {
 
             case "YOUTUBE":
@@ -389,9 +412,8 @@ public class HandsFreeListeningService extends Service
 
     private void sendAccessibilityCommand(String command) {
 
-        Intent intent = new Intent(
-                "com.voiceai.control.COMMAND"
-        );
+        Intent intent =
+                new Intent("com.voiceai.control.COMMAND");
 
         intent.setPackage(getPackageName());
         intent.putExtra("command", command);
@@ -413,7 +435,7 @@ public class HandsFreeListeningService extends Service
                 increase
                         ? AudioManager.ADJUST_RAISE
                         : AudioManager.ADJUST_LOWER,
-                0
+                AudioManager.FLAG_SHOW_UI
         );
     }
 
@@ -462,6 +484,7 @@ public class HandsFreeListeningService extends Service
 
         running = false;
         waitingForCommand = false;
+        listeningNow = false;
 
         if (handler != null) {
             handler.removeCallbacksAndMessages(null);
@@ -491,6 +514,7 @@ public class HandsFreeListeningService extends Service
     public void onDestroy() {
 
         running = false;
+        listeningNow = false;
 
         if (handler != null) {
             handler.removeCallbacksAndMessages(null);
@@ -514,4 +538,4 @@ public class HandsFreeListeningService extends Service
     public IBinder onBind(Intent intent) {
         return null;
     }
-              }
+        }
