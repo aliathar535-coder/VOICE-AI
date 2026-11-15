@@ -27,18 +27,59 @@ public class MainActivity extends Activity {
     private SpeechRecognizer recognizer;
     private AudioManager audio;
     private LinearLayout mainLayout;
+    private CustomCommandStore commandStore;
+
     private boolean listening = false;
+    private boolean learningCommand = false;
+    private String pendingPhrase = "";
+
+    private static final String[] ACTIONS = {
+        "YOUTUBE",
+        "WHATSAPP",
+        "MX_PLAYER",
+        "VOLUME_UP",
+        "VOLUME_DOWN",
+        "PLAY_PAUSE",
+        "NEXT",
+        "PREVIOUS",
+        "FAST_FORWARD",
+        "REWIND",
+        "SCROLL_UP",
+        "SCROLL_DOWN",
+        "BACK",
+        "HOME",
+        "RECENTS"
+    };
+
+    private static final String[] ACTION_NAMES = {
+        "YouTube खोलो",
+        "WhatsApp खोलो",
+        "MX Player खोलो",
+        "आवाज़ बढ़ाओ",
+        "आवाज़ कम करो",
+        "गाना चलाओ / रोक दो",
+        "अगला गाना",
+        "पिछला गाना",
+        "आगे चलाओ",
+        "पीछे चलाओ",
+        "ऊपर स्क्रॉल",
+        "नीचे स्क्रॉल",
+        "वापस जाओ",
+        "होम पर जाओ",
+        "हाल के ऐप"
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        commandStore = new CustomCommandStore(this);
 
         mainLayout = new LinearLayout(this);
         mainLayout.setOrientation(LinearLayout.VERTICAL);
         mainLayout.setGravity(Gravity.CENTER_HORIZONTAL);
-        mainLayout.setPadding(24, 35, 24, 25);
+        mainLayout.setPadding(24, 30, 24, 25);
         mainLayout.setBackgroundColor(Color.rgb(7, 13, 30));
 
         ScrollView scroll = new ScrollView(this);
@@ -65,43 +106,33 @@ public class MainActivity extends Activity {
         status.setTextSize(17);
         status.setTextColor(Color.GREEN);
         status.setGravity(Gravity.CENTER);
-        add(status, 65);
+        add(status, 60);
 
         micButton = new Button(this);
         micButton.setText("🎙 बोलना शुरू करें");
         micButton.setTextSize(18);
-        add(micButton, 75);
-
-        micButton.setOnClickListener(v -> checkPermission());
+        add(micButton, 70);
+        micButton.setOnClickListener(v -> {
+            learningCommand = false;
+            checkPermission();
+        });
 
         result = new TextView(this);
         result.setText("आपका आदेश यहाँ दिखाई देगा");
         result.setTextColor(Color.WHITE);
         result.setTextSize(17);
         result.setGravity(Gravity.CENTER);
-        add(result, 75);
+        add(result, 65);
 
-        TextView commands = new TextView(this);
-        commands.setText(
-            "आवाज़ के आदेश\n\n" +
-            "• आवाज़ बढ़ाओ\n" +
-            "• आवाज़ कम करो\n" +
-            "• YouTube खोलो\n" +
-            "• WhatsApp खोलो\n" +
-            "• MX Player खोलो\n" +
-            "• अगला गाना\n" +
-            "• पिछला गाना\n" +
-            "• रोक दो / चलाओ\n" +
-            "• आगे चलाओ / पीछे चलाओ\n" +
-            "• ऊपर स्क्रॉल / नीचे स्क्रॉल\n" +
-            "• वापस जाओ\n" +
-            "• होम पर जाओ\n" +
-            "• हाल के ऐप दिखाओ"
-        );
-        commands.setTextColor(Color.LTGRAY);
-        commands.setTextSize(15);
-        commands.setGravity(Gravity.CENTER);
-        add(commands, 300);
+        Button learnButton = new Button(this);
+        learnButton.setText("＋ नया कमांड सिखाएँ");
+        add(learnButton, 60);
+        learnButton.setOnClickListener(v -> startLearning());
+
+        Button listButton = new Button(this);
+        listButton.setText("मेरे सेव किए कमांड");
+        add(listButton, 60);
+        listButton.setOnClickListener(v -> showSavedCommands());
 
         Button accessButton = new Button(this);
         accessButton.setText("मोबाइल कंट्रोल सेटिंग");
@@ -132,7 +163,7 @@ public class MainActivity extends Activity {
             new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, height
             );
-        params.setMargins(0, 8, 0, 8);
+        params.setMargins(0, 7, 0, 7);
         mainLayout.addView(view, params);
     }
 
@@ -194,10 +225,18 @@ public class MainActivity extends Activity {
                     );
 
                 if (matches != null && !matches.isEmpty()) {
-                    String command = matches.get(0).toLowerCase(Locale.ROOT);
-                    result.setText("आपने कहा: " + command);
-                    history.setText("आखिरी आदेश:\n" + command);
-                    runCommand(command);
+                    String spoken = matches.get(0).trim()
+                        .toLowerCase(Locale.ROOT);
+
+                    if (learningCommand) {
+                        pendingPhrase = spoken;
+                        learningCommand = false;
+                        showActionChoice(spoken);
+                    } else {
+                        result.setText("आपने कहा: " + spoken);
+                        history.setText("आखिरी आदेश:\n" + spoken);
+                        runCommand(spoken);
+                    }
                 }
 
                 status.setText("● तैयार हूँ");
@@ -225,7 +264,127 @@ public class MainActivity extends Activity {
         recognizer.startListening(intent);
     }
 
+    private void startLearning() {
+        learningCommand = true;
+        pendingPhrase = "";
+        result.setText("अब अपना नया आदेश बोलिए");
+        checkPermission();
+    }
+
+    private void showActionChoice(String phrase) {
+        String suggestion = suggestAction(phrase);
+
+        String[] options = new String[ACTION_NAMES.length];
+        for (int i = 0; i < ACTION_NAMES.length; i++) {
+            options[i] = ACTION_NAMES[i];
+        }
+
+        new AlertDialog.Builder(this)
+            .setTitle("कमांड का एक्शन चुनें")
+            .setMessage("आपका वाक्य: " + phrase +
+                "\nऐप का सुझाव: " + getActionName(suggestion))
+            .setSingleChoiceItems(options, findActionIndex(suggestion),
+                (dialog, which) -> {
+                    String selected = ACTIONS[which];
+
+                    new AlertDialog.Builder(this)
+                        .setTitle("कमांड सेव करें?")
+                        .setMessage("वाक्य: " + phrase +
+                            "\nएक्शन: " + ACTION_NAMES[which])
+                        .setNegativeButton("नहीं", (d, w) -> d.dismiss())
+                        .setPositiveButton("हाँ, सेव करें", (d, w) -> {
+                            boolean saved = commandStore.saveCommand(
+                                phrase, selected
+                            );
+                            result.setText(saved ?
+                                "कमांड सेव हो गया: " + phrase :
+                                "कमांड सेव नहीं हुआ");
+                        })
+                        .show();
+
+                    dialog.dismiss();
+                })
+            .setNegativeButton("रद्द करें", null)
+            .show();
+    }
+
+    private String suggestAction(String phrase) {
+        if (phrase.contains("यूट्यूब")) return "YOUTUBE";
+        if (phrase.contains("व्हाट्स") || phrase.contains("व्हाट्सएप"))
+            return "WHATSAPP";
+        if (phrase.contains("एमएक्स") || phrase.contains("एम एक्स"))
+            return "MX_PLAYER";
+        if (phrase.contains("बढ़ाओ")) return "VOLUME_UP";
+        if (phrase.contains("कम करो")) return "VOLUME_DOWN";
+        if (phrase.contains("अगला")) return "NEXT";
+        if (phrase.contains("पिछला")) return "PREVIOUS";
+        if (phrase.contains("आगे")) return "FAST_FORWARD";
+        if (phrase.contains("पीछे")) return "REWIND";
+        if (phrase.contains("ऊपर")) return "SCROLL_UP";
+        if (phrase.contains("नीचे")) return "SCROLL_DOWN";
+        if (phrase.contains("वापस")) return "BACK";
+        if (phrase.contains("होम")) return "HOME";
+        if (phrase.contains("हाल के")) return "RECENTS";
+        if (phrase.contains("रोक") || phrase.contains("चलाओ"))
+            return "PLAY_PAUSE";
+        return "PLAY_PAUSE";
+    }
+
+    private String getActionName(String action) {
+        for (int i = 0; i < ACTIONS.length; i++) {
+            if (ACTIONS[i].equals(action)) return ACTION_NAMES[i];
+        }
+        return "एक्शन चुनें";
+    }
+
+    private int findActionIndex(String action) {
+        for (int i = 0; i < ACTIONS.length; i++) {
+            if (ACTIONS[i].equals(action)) return i;
+        }
+        return -1;
+    }
+
+    private void showSavedCommands() {
+        ArrayList<String> phrases = commandStore.getAllPhrases();
+
+        if (phrases.isEmpty()) {
+            new AlertDialog.Builder(this)
+                .setTitle("मेरे कमांड")
+                .setMessage("अभी कोई कमांड सेव नहीं है")
+                .setPositiveButton("ठीक है", null)
+                .show();
+            return;
+        }
+
+        String[] items = phrases.toArray(new String[0]);
+
+        new AlertDialog.Builder(this)
+            .setTitle("कमांड चुनें")
+            .setItems(items, (dialog, which) -> {
+                String phrase = items[which];
+                String action = commandStore.findAction(phrase);
+
+                new AlertDialog.Builder(this)
+                    .setTitle(phrase)
+                    .setMessage("एक्शन: " + getActionName(action))
+                    .setPositiveButton("हटाएँ", (d, w) -> {
+                        commandStore.deleteCommand(phrase);
+                        result.setText("कमांड हटा दिया गया");
+                    })
+                    .setNegativeButton("बंद करें", null)
+                    .show();
+            })
+            .setNegativeButton("बंद करें", null)
+            .show();
+    }
+
     private void runCommand(String c) {
+        String customAction = commandStore.findAction(c);
+
+        if (customAction != null) {
+            executeAction(customAction);
+            return;
+        }
 
         if (c.contains("आवाज़ बढ़ाओ") || c.contains("वॉल्यूम बढ़ाओ")) {
             changeVolume(true);
@@ -234,46 +393,80 @@ public class MainActivity extends Activity {
             changeVolume(false);
         }
         else if (c.contains("यूट्यूब")) {
-            openApp("com.google.android.youtube");
+            executeAction("YOUTUBE");
         }
         else if (c.contains("व्हाट्सऐप") || c.contains("व्हाट्सएप")) {
-            openApp("com.whatsapp");
+            executeAction("WHATSAPP");
         }
         else if (c.contains("एमएक्स प्लेयर") || c.contains("एम एक्स प्लेयर")) {
-            openMXPlayer();
+            executeAction("MX_PLAYER");
         }
         else if (c.contains("अगला गाना") || c.equals("अगला")) {
-            sendCommand("NEXT");
+            executeAction("NEXT");
         }
         else if (c.contains("पिछला गाना") || c.equals("पिछला")) {
-            sendCommand("PREVIOUS");
+            executeAction("PREVIOUS");
         }
         else if (c.contains("फास्ट फॉरवर्ड") || c.contains("आगे चलाओ")) {
-            sendCommand("FAST_FORWARD");
+            executeAction("FAST_FORWARD");
         }
         else if (c.contains("रिवाइंड") || c.contains("पीछे चलाओ")) {
-            sendCommand("REWIND");
+            executeAction("REWIND");
         }
         else if (c.contains("चलाओ") || c.contains("रोक दो") || c.contains("पॉज")) {
-            sendCommand("PLAY_PAUSE");
+            executeAction("PLAY_PAUSE");
         }
         else if (c.contains("नीचे स्क्रॉल")) {
-            sendCommand("SCROLL_DOWN");
+            executeAction("SCROLL_DOWN");
         }
         else if (c.contains("ऊपर स्क्रॉल")) {
-            sendCommand("SCROLL_UP");
+            executeAction("SCROLL_UP");
         }
         else if (c.contains("वापस जाओ")) {
-            sendCommand("BACK");
+            executeAction("BACK");
         }
         else if (c.contains("होम पर जाओ")) {
-            sendCommand("HOME");
+            executeAction("HOME");
         }
         else if (c.contains("हाल के ऐप")) {
-            sendCommand("RECENTS");
+            executeAction("RECENTS");
         }
         else {
             result.setText("यह आदेश अभी समझ नहीं आया");
+        }
+    }
+
+    private void executeAction(String action) {
+        switch (action) {
+            case "YOUTUBE":
+                openApp("com.google.android.youtube");
+                break;
+            case "WHATSAPP":
+                openApp("com.whatsapp");
+                break;
+            case "MX_PLAYER":
+                openMXPlayer();
+                break;
+            case "VOLUME_UP":
+                changeVolume(true);
+                break;
+            case "VOLUME_DOWN":
+                changeVolume(false);
+                break;
+            case "PLAY_PAUSE":
+            case "NEXT":
+            case "PREVIOUS":
+            case "FAST_FORWARD":
+            case "REWIND":
+            case "SCROLL_UP":
+            case "SCROLL_DOWN":
+            case "BACK":
+            case "HOME":
+            case "RECENTS":
+                sendCommand(action);
+                break;
+            default:
+                result.setText("यह एक्शन उपलब्ध नहीं है");
         }
     }
 
@@ -335,4 +528,4 @@ public class MainActivity extends Activity {
         }
         super.onDestroy();
     }
-}
+                                         }
